@@ -29,15 +29,42 @@ else {
 function New-AzSentinelAlertRuleFromGitHub {
     [CmdletBinding()]
     param (
-        $resourceGroupName,
-        $workspaceName,
-        $gitHubRawUrl
+        [Parameter(Mandatory=$true)][string]$resourceGroupName,
+        [Parameter(Mandatory=$true)][string]$workspaceName,
+        [Parameter(Mandatory=$true)][string]$gitHubRawUrl,
+        [Parameter(Mandatory=$false)][bool]$isGitHubDirectoryUrl = $false
+    )
+
+    # connect to Azure
+    Connect-AzAccount
+
+    if($isGitHubDirectoryUrl)
+    {
+        $gitDir = Invoke-WebRequest $gitHubRawUrl                                                                                               
+        $gitRules = ($gitDir.Links.outerhtml | ?{$_ -like "*.yaml*"} | %{[regex]::match($_,'master.*yaml"').Value}).Replace('"',"") | %{if($_ -ne ""){"https://raw.githubusercontent.com/Azure/Azure-Sentinel/" + $_}}
+        # write all alert rules from github dir to sentinel
+        foreach($rawLink in $gitRules)
+        {
+            New-SingleAlertRuleFromGitHub -ResourceGroupName $resourceGroupName -WorkspaceName $workspaceName -gitHubRawUrl $rawLink
+        }
+    }
+    else {
+        # write alert rule to sentinel
+        New-SingleAlertRuleFromGitHub -ResourceGroupName $resourceGroupName -WorkspaceName $workspaceName -gitHubRawUrl $gitHubRawUrl
+    }
+}
+
+function New-SingleAlertRuleFromGitHub {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true)][string]$resourceGroupName,
+        [Parameter(Mandatory=$true)][string]$workspaceName,
+        [Parameter(Mandatory=$true)][string]$gitHubRawUrl
     )
 
     # connect to gitHub and read raw yaml
-    $git = $gitHubRawUrl
-    $yaml= convertfrom-yaml (Invoke-RestMethod $git)
-    
+    $yaml= convertfrom-yaml (Invoke-RestMethod $gitHubRawUrl)
+  
     # convert compare parameters
     $compHT = @{}
     $compHT.add("gt","GreaterThan")
@@ -64,8 +91,7 @@ function New-AzSentinelAlertRuleFromGitHub {
     }
     # lookup compare parameter
     $cp = $compHT[$yaml.TriggerOperator]
-    # connect to Azure
-    Connect-AzAccount
-    # write alert rule to sentinel
     New-AzSentinelAlertRule -ResourceGroupName $resourceGroupName -WorkspaceName $workspaceName -Scheduled -Enabled -description $yaml.description -DisplayName $yaml.name -Severity $yaml.Severity -Query $yaml.Query -QueryFrequency $QueryFrequency -QueryPeriod $QueryPeriod -TriggerThreshold $yaml.TriggerThreshold -TriggerOperator $cp
+    $rDisplayName = $yaml.name
+    Write-Output "Rule created:" $rDisplayName
 }
