@@ -42,6 +42,8 @@ function New-AzSentinelAlertRuleFromGitHub {
     {
         $gitDir = Invoke-WebRequest $gitHubRawUrl                                                                                               
         $gitRules = ($gitDir.Links.outerhtml | ?{$_ -like "*.yaml*"} | %{[regex]::match($_,'master.*yaml"').Value}).Replace('"',"") | %{if($_ -ne ""){"https://raw.githubusercontent.com/Azure/Azure-Sentinel/" + $_}}
+        write-host "found those rules on the page:" -ForegroundColor Green
+        $gitRules
         # write all alert rules from github dir to sentinel
         foreach($rawLink in $gitRules)
         {
@@ -63,10 +65,10 @@ function New-SingleAlertRuleFromGitHub {
     )
 
     # connect to gitHub and read raw yaml
-    $yaml= convertfrom-yaml (Invoke-RestMethod $gitHubRawUrl)
-  
+    $global:yaml= convertfrom-yaml (Invoke-RestMethod $gitHubRawUrl)
+    Write-Host "GH-RAW-URL: " $gitHubRawUrl -ForegroundColor Yellow
     # convert compare parameters
-    $compHT = @{}
+    $global:compHT = @{}
     $compHT.add("gt","GreaterThan")
     $compHT.add("eq","Equal")
     $compHT.add("lt","LessThan")
