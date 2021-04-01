@@ -36,10 +36,15 @@ function New-AzSentinelAlertRuleFromGitHub {
     )
 
     # connect to Azure
+    write-host Connect to Azure Account ... -ForegroundColor Green
     Connect-AzAccount
+    # Check Existing Rules (don't create new ones for existing rules, this is a repo sync option)
+    write-host get existing alert rules ... -ForegroundColor Green
+    $existingRules = get-azsentinelalertrule -resourceGroupName $resourceGroupName -workspaceName $workspaceName 
 
     if($isGitHubDirectoryUrl)
     {
+        write-host $isGitHubDirectoryUrl was set to true, getting all URLs on page ... -ForegroundColor Green
         $gitDir = Invoke-WebRequest $gitHubRawUrl                                                                                               
         $gitRules = ($gitDir.Links.outerhtml | ?{$_ -like "*.yaml*"} | %{[regex]::match($_,'master.*yaml"').Value}).Replace('"',"") | %{if($_ -ne ""){"https://raw.githubusercontent.com/Azure/Azure-Sentinel/" + $_}}
         write-host "found those rules on the page:" -ForegroundColor Green
@@ -47,12 +52,13 @@ function New-AzSentinelAlertRuleFromGitHub {
         # write all alert rules from github dir to sentinel
         foreach($rawLink in $gitRules)
         {
-            New-SingleAlertRuleFromGitHub -ResourceGroupName $resourceGroupName -WorkspaceName $workspaceName -gitHubRawUrl $rawLink
+            New-SingleAlertRuleFromGitHub -ResourceGroupName $resourceGroupName -WorkspaceName $workspaceName -gitHubRawUrl $rawLink -existingRules $existingRules
         }
     }
     else {
         # write alert rule to sentinel
-        New-SingleAlertRuleFromGitHub -ResourceGroupName $resourceGroupName -WorkspaceName $workspaceName -gitHubRawUrl $gitHubRawUrl
+        write-host This is a single request for $gitHubRawUrl ... -ForegroundColor Green
+        New-SingleAlertRuleFromGitHub -ResourceGroupName $resourceGroupName -WorkspaceName $workspaceName -gitHubRawUrl $gitHubRawUrl -existingRules $existingRules
     }
 }
 
@@ -61,7 +67,8 @@ function New-SingleAlertRuleFromGitHub {
     param (
         [Parameter(Mandatory=$true)][string]$resourceGroupName,
         [Parameter(Mandatory=$true)][string]$workspaceName,
-        [Parameter(Mandatory=$true)][string]$gitHubRawUrl
+        [Parameter(Mandatory=$true)][string]$gitHubRawUrl,
+        [Parameter(Mandatory=$true)][array]$existingRules
     )
 
     # connect to gitHub and read raw yaml
@@ -75,6 +82,7 @@ function New-SingleAlertRuleFromGitHub {
     $compHT.add("ne","NotEqual")
 
     # create timespans for queryperiod and queryfrequency
+    write-host create timespans for queryperiod and queryfrequency ... -ForegroundColor Green
     if($yaml.QueryPeriod.contains("d"))
     {
         $QueryPeriod = New-TimeSpan -days $yaml.QueryPeriod.replace("d","")
@@ -93,7 +101,15 @@ function New-SingleAlertRuleFromGitHub {
     }
     # lookup compare parameter
     $cp = $compHT[$yaml.TriggerOperator]
-    New-AzSentinelAlertRule -ResourceGroupName $resourceGroupName -WorkspaceName $workspaceName -Scheduled -Enabled -description $yaml.description -DisplayName $yaml.name -Severity $yaml.Severity -Query $yaml.Query -QueryFrequency $QueryFrequency -QueryPeriod $QueryPeriod -TriggerThreshold $yaml.TriggerThreshold -TriggerOperator $cp
-    $rDisplayName = $yaml.name
-    Write-Output "Rule created:" $rDisplayName
+    if($existingRules.DisplayName -notcontains $yaml.name)
+    {
+        write-host creating new rule: $rDisplayName ... -ForegroundColor Green
+        $query = $yaml.Query
+        New-AzSentinelAlertRule -ResourceGroupName $resourceGroupName -WorkspaceName $workspaceName -Scheduled -Enabled -description $yaml.description -DisplayName $yaml.name -Severity $yaml.Severity -Query $query -QueryFrequency $QueryFrequency -QueryPeriod $QueryPeriod -TriggerThreshold $yaml.TriggerThreshold -TriggerOperator $cp
+        $rDisplayName = $yaml.name
+        Write-Output "Rule created:" $rDisplayName
+    }
+    else {
+        Write-Host "Skipping. Rule already exists." -ForegroundColor Yellow
+    }
 }
