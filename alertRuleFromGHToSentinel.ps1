@@ -32,12 +32,17 @@ function New-AzSentinelAlertRuleFromGitHub {
         [Parameter(Mandatory=$true)][string]$resourceGroupName,
         [Parameter(Mandatory=$true)][string]$workspaceName,
         [Parameter(Mandatory=$true)][string]$gitHubRawUrl,
-        [Parameter(Mandatory=$false)][bool]$isGitHubDirectoryUrl = $false
+        [Parameter(Mandatory=$false)][bool]$isGitHubDirectoryUrl = $false,
+        [Parameter(Mandatory=$false)][string]$Tenant = '',
+        [Parameter(Mandatory=$false)][string]$Subscription = ''
     )
 
     # connect to Azure
     write-host Connect to Azure Account ... -ForegroundColor Green
-    Connect-AzAccount
+    $Params = @{}
+    If ($Tenant -ne '') {$Params.Tenant = $Tenant}
+    If ($Subscription -ne '') {$Params.Subscription = $Subscription}
+    Connect-AzAccount @Params
     # Check Existing Rules (don't create new ones for existing rules, this is a repo sync option)
     write-host get existing alert rules ... -ForegroundColor Green
     $existingRules = get-azsentinelalertrule -resourceGroupName $resourceGroupName -workspaceName $workspaceName 
